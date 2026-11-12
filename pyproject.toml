@@ -27,7 +27,7 @@ dev = [
 ]
 
 [project.scripts]
-opal-device = "opal_device_cli.cli:main"
+opal-device = "opal_device.cli:app"
 opal-device-audit = "opal_device.contract_audit:main"
 
 [tool.pytest.ini_options]
