@@ -16,9 +16,11 @@ from typing import Any, Protocol
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from .correlation import ids_from_request
 from .dependencies import StoreDep
 from .errors import ApiError
 from .precondition import check_if_match, require_if_match
+from .schemas import DiscoveryRequestModel
 from .store import Store
 
 router = APIRouter()
@@ -181,3 +183,26 @@ def test_plugin(plugin_id: str, store: StoreDep):
     return JSONResponse(
         content={"plugin_id": plugin_id, "ok": ok, "details": details}
     )
+
+
+@router.post("/api/v1/plugin/{plugin_id}/discover")
+def discover_plugin(
+    plugin_id: str,
+    request: Request,
+    store: StoreDep,
+    body: DiscoveryRequestModel,
+):
+    _get_plugin(plugin_id)
+    from .discovery import run_scan
+
+    ids = ids_from_request(request)
+    with store.write_txn():
+        result = run_scan(
+            store,
+            plugin_ids=[plugin_id],
+            include_network=body.include_network,
+            dry_run=body.dry_run,
+            request_id=ids.request_id,
+            transaction_id=ids.transaction_id,
+        )
+    return JSONResponse(content=result)

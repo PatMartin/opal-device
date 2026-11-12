@@ -52,3 +52,11 @@ class TagSet(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     tag: str
+
+
+class DiscoveryRequestModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    plugin_ids: list[str] | None = None
+    include_network: bool = False
+    dry_run: bool = False

@@ -19,6 +19,7 @@ from . import (
     constants,
     defaults,
     devices,
+    discovery,
     groups,
     plugins,
     settings,
@@ -63,6 +64,7 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
     app.include_router(defaults.router)
     app.include_router(plugins.router)
     app.include_router(catalog.router)
+    app.include_router(discovery.router)
 
     @app.exception_handler(ApiError)
     async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:

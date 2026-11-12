@@ -302,8 +302,9 @@ def list_devices(
 
 
 def _refresh_inventory(store: Store) -> None:
-    """Run enabled discovery plugins (populated by the plugin step)."""
-    return None
+    from .discovery import refresh_inventory
+
+    refresh_inventory(store)
 
 
 def _encode_cursor(device_id: str) -> str:
