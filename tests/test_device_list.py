@@ -213,7 +213,8 @@ def test_refresh_param_accepted(client):
     _seed(client, name="a", qualified_name="h/a")
     resp = client.get("/api/v1/device/?refresh=true")
     assert resp.status_code == 200
-    assert resp.json()["total"] == 1
+    # refresh runs enabled plugins; the builtin host plugin adds cpus0
+    assert resp.json()["total"] == 2
 
 
 def test_combined_filters(client):

@@ -29,6 +29,7 @@ from fastapi.responses import JSONResponse, Response
 
 from .dependencies import StoreDep
 from .errors import ApiError
+from .events import emit
 from .filters import match_device, parse_label_param
 from .precondition import check_if_match, require_if_match
 from .schemas import (
@@ -208,6 +209,7 @@ def add_device(request: Request, store: StoreDep, body: DeviceCreate):
                 f"{doc['qualified_name']}",
                 code="conflict",
             )
+        emit(store, "device.registered", doc, device_id=doc["id"])
         store.bump_revision()
     return JSONResponse(
         status_code=201,
@@ -374,6 +376,11 @@ def _device_test(store: Store, doc: dict) -> dict:
     )
     status = "available" if all(c["ok"] for c in checks) else "unavailable"
     checked_at = _now()
+    if doc.get("status") != status:
+        emit(
+            store, "device.status_changed",
+            {"status": status}, device_id=doc["id"],
+        )
     doc["status"] = status
     doc["last_checked"] = checked_at
     _update(store, doc)
@@ -441,6 +448,7 @@ def _tag_add(request: Request, store: Store, doc: dict, tag: str):
             raise ApiError(409, f"Tag already present: {tag}", code="conflict")
         doc.setdefault("tags", []).append(tag)
         _update(store, doc)
+        emit(store, "device.updated", doc, device_id=doc["id"])
         store.bump_revision()
         return JSONResponse(content=doc, headers={"ETag": store.etag()})
 
@@ -465,6 +473,7 @@ def device_patch(rest: str, request: Request, store: StoreDep, body: DevicePatch
             if value is not None:
                 doc[field] = value
         _update_or_409(store, doc)
+        emit(store, "device.updated", doc, device_id=doc["id"])
         store.bump_revision()
         return JSONResponse(content=doc, headers={"ETag": store.etag()})
 
@@ -494,6 +503,7 @@ def _label_set(
         check_if_match(request, store)
         doc.setdefault("labels", {})[key] = value
         _update(store, doc)
+        emit(store, "device.updated", doc, device_id=doc["id"])
         store.bump_revision()
         return JSONResponse(content=doc, headers={"ETag": store.etag()})
 
@@ -515,6 +525,11 @@ def device_delete(rest: str, request: Request, store: StoreDep):
     with store.write_txn():
         check_if_match(request, store)
         _delete(store, doc["id"])
+        emit(
+            store, "device.removed",
+            {"qualified_name": doc["qualified_name"]},
+            device_id=doc["id"],
+        )
         store.bump_revision()
     return Response(status_code=204)
 
@@ -527,6 +542,7 @@ def _label_delete(request: Request, store: Store, doc: dict, key: str):
             raise ApiError(404, f"Label not found: {key}")
         del doc["labels"][key]
         _update(store, doc)
+        emit(store, "device.updated", doc, device_id=doc["id"])
         store.bump_revision()
     return Response(status_code=204)
 
@@ -539,5 +555,6 @@ def _tag_delete(request: Request, store: Store, doc: dict, tag: str):
             raise ApiError(404, f"Tag not found: {tag}")
         doc["tags"].remove(tag)
         _update(store, doc)
+        emit(store, "device.updated", doc, device_id=doc["id"])
         store.bump_revision()
     return Response(status_code=204)

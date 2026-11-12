@@ -22,6 +22,7 @@ from .correlation import ids_from_request
 from .dependencies import StoreDep
 from .devices import find_device
 from .errors import ApiError
+from .events import emit
 from .plugins import is_enabled, plugin_registry
 from .schemas import DiscoveryRequestModel
 from .store import Store
@@ -164,14 +165,26 @@ def run_scan(
                 changed = True
                 if not dry_run:
                     _persist(store, doc, None)
+                    emit(
+                        store, "device.registered", doc,
+                        device_id=doc["id"],
+                    )
             else:
                 if _config_fields_changed(existing, doc):
                     updated += 1
                     changed = True
                 if not dry_run:
                     _persist(store, doc, existing)
+                    emit(
+                        store, "device.updated", doc,
+                        device_id=doc["id"],
+                    )
 
     if changed and not dry_run:
+        emit(
+            store, "discovery.completed",
+            {"created": created, "updated": updated},
+        )
         store.bump_revision()
     return {
         "discovered": discovered,

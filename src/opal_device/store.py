@@ -25,7 +25,9 @@ class Store:
         self._lock = threading.RLock()
         self._txn_depth = 0
         self._savepoint_seq = 0
-        self._conn = sqlite3.connect(self.path, check_same_thread=False)
+        self._conn = sqlite3.connect(
+            self.path, check_same_thread=False, isolation_level=None
+        )
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._migrate()
@@ -69,6 +71,16 @@ class Store:
                 "CREATE TABLE IF NOT EXISTS plugin_state ("
                 "  id TEXT PRIMARY KEY,"
                 "  enabled INTEGER NOT NULL"
+                ")"
+            )
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS events ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  event TEXT NOT NULL,"
+                "  device_id TEXT,"
+                "  peer_id TEXT,"
+                "  data TEXT NOT NULL,"
+                "  time TEXT NOT NULL"
                 ")"
             )
             self._conn.execute(
