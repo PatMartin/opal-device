@@ -1,0 +1,3195 @@
+# OPAL Devices — shared contract base for the OPAL devices registry domain.
+# Consumed via external $ref; never published standalone. See info.description.
+
+openapi: 3.1.0
+info:
+  title: OPAL Devices API
+  version: 1.7.1
+  description: 'Optional metadata-only registry for audio, video and compute devices (OPAL SUITE
+    STANDARD v1.2; follows the shared kernel version). Local-first and optionally federated.
+    No capture, playback, reservation, inference or device-control endpoints. Human-managed
+    YAML configuration; observed inventories and remote caches in SQLite. Peer inventory reads
+    require authentication; registered peers see metadata by default unless a sharing policy
+    denies it.
+
+    This document is never served directly. A serving spec mounts the reusable Path Items
+    below under `/api/v1` and references this document''s components via external `$ref`s;
+    the standard kernel route families (health/, info/, setting/, backup/, profile/, persona/,
+    service/) are mounted from `./opal_kernel.yaml` by that same serving spec and are not
+    redeclared here. Conventions inherited from the kernel: the four X-Opal-* correlation
+    headers on every request and response; strong ETag + mandatory If-Match on mutable
+    configuration (428 missing, 412 stale); 204 for empty deletion; 201 + Location for
+    creation; the OpalError envelope for all 4xx/5xx JSON bodies; and a single BearerAuth —
+    trusted-peer status on federation reads is an authorization decision (403) driven by
+    sharing policy, not a separate scheme.
+
+    Normalization from the v0.1.0 proposal (`openapi/OPAL_DEVICES_OPENAPI.yaml`): `/v1/*`
+    routes become `/api/v1` singular collections with a trailing slash — a serving spec
+    mounts `device/`, `group/`, `peer/`, `plugin/`, `sharing/policy/`, `default/`, `event/`,
+    `discovery/`, `federation/` and `catalog`; `/v1/health` and `/v1/settings{,/{key}}` are
+    kernel surface and are not part of this domain base; `adminBearer`/`peerBearer` collapse
+    to the kernel `BearerAuth`.'
+  x-decisions:
+  - '12.1'
+  - '12.2'
+  - '12.3'
+  - '12.4'
+  - '12.5'
+  - '12.6'
+  - '12.7'
+  - '12.8'
+  - '12.9'
+  - '12.10'
+  - '12.11'
+  - '12.12'
+  - '12.13'
+  - '12.14'
+  - '12.15'
+  - '12.16'
+  - '12.17'
+  x-design-notes:
+  - SSE native; outbound publishing is separate and disabled by default (events.publish_enabled=false).
+  - Peer auto discovery disabled by default (federation.auto_discovery_enabled=false).
+  - Federation refresh is periodic + on-demand; inventory cached locally and staleness reported.
+  - Default trusted-peer inventory visibility is allow_trusted; deny policies take precedence.
+  - Device names may contain /; use UUIDs as path parameters or URL-encode qualified names.
+  - Discovery plugins use Python package entry points; backend-specific capabilities are extensible.
+  - No media capture, stream creation, output playback, GPU reservation or remote control endpoints.
+tags:
+- name: devices
+  description: Device inventory and metadata
+- name: discovery
+  description: Local backend discovery
+- name: defaults
+  description: Preferred device defaults
+- name: labels
+  description: Key-value device metadata
+- name: tags
+  description: Simple device tags
+- name: groups
+  description: Static and dynamic collections
+- name: peers
+  description: Optional federated registry peers
+- name: sharing
+  description: Visibility rules for trusted peers
+- name: plugins
+  description: Discovery backend inspection and activation
+- name: events
+  description: Native SSE changes and optional outbound publishing
+- name: federation
+  description: Peer-facing authenticated inventory
+- name: catalog
+  description: Device types, discovery backends and event names
+paths: {}
+components:
+  securitySchemes:
+    BearerAuth:
+      $ref: './opal_kernel.yaml#/components/securitySchemes/BearerAuth'
+  parameters:
+    DeviceId:
+      name: device_id
+      in: path
+      required: true
+      description: UUID or URL-encoded host-qualified name. Names containing / must be percent encoded.
+      schema:
+        type: string
+    GroupId:
+      name: group_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PeerId:
+      name: peer_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PolicyId:
+      name: policy_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PluginId:
+      name: plugin_id
+      in: path
+      required: true
+      schema:
+        type: string
+    LabelKey:
+      name: key
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    TagValue:
+      name: tag
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    DefaultScope:
+      name: scope
+      in: path
+      required: true
+      schema:
+        type: string
+        enum:
+        - global
+        - host
+        - device
+        - type
+    DefaultTarget:
+      name: target
+      in: path
+      required: true
+      schema:
+        type: string
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+  schemas:
+
+
+    DeviceType:
+      type: string
+      enum:
+      - camera
+      - microphone
+      - speaker
+      - cpu
+      - gpu
+      - npu
+      - accelerator
+      - other
+
+    Availability:
+      type: string
+      enum:
+      - available
+      - unavailable
+      - unknown
+      - stale
+
+    Time:
+      type: string
+      format: date-time
+
+    Device:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        qualified_name:
+          type: string
+        host_id:
+          type: string
+        host_name:
+          type: string
+        type:
+          $ref: '#/components/schemas/DeviceType'
+        backend:
+          type: string
+        status:
+          $ref: '#/components/schemas/Availability'
+        status_reason:
+          type: string
+        last_seen:
+          $ref: '#/components/schemas/Time'
+        last_checked:
+          $ref: '#/components/schemas/Time'
+        origin_peer_id:
+          type: string
+          format: uuid
+        capabilities:
+          type: object
+          additionalProperties: {}
+        configuration:
+          type: object
+          additionalProperties: {}
+        preferred_defaults:
+          type: object
+          additionalProperties: {}
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        tags:
+          type: array
+          items:
+            type: string
+        access:
+          type: string
+          enum:
+          - local
+          - network
+          - virtual
+        resource_uri:
+          type: string
+          description: Device locator; credentials must be redacted for inventory sharing
+        metadata:
+          type: object
+          additionalProperties: {}
+      required:
+      - id
+      - name
+      - qualified_name
+      - host_id
+      - host_name
+      - type
+      - backend
+      - status
+      - capabilities
+      - labels
+      - tags
+      - access
+      description: Core portable fields; backend-defined capability keys may be namespaced and may evolve.
+      additionalProperties: false
+
+    DeviceCreate:
+      type: object
+      properties:
+        name:
+          type: string
+        host_id:
+          type: string
+        host_name:
+          type: string
+        type:
+          $ref: '#/components/schemas/DeviceType'
+        backend:
+          type: string
+        resource_uri:
+          type: string
+        access:
+          type: string
+          enum:
+          - local
+          - network
+          - virtual
+        configuration:
+          type: object
+          additionalProperties: {}
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: {}
+      required:
+      - name
+      - host_id
+      - host_name
+      - type
+      - backend
+      - access
+      additionalProperties: false
+
+    DevicePatch:
+      type: object
+      properties:
+        name:
+          type: string
+        resource_uri:
+          type: string
+        configuration:
+          type: object
+          additionalProperties: {}
+        metadata:
+          type: object
+          additionalProperties: {}
+      additionalProperties: false
+
+    DeviceList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Device'
+        next_cursor:
+          type:
+          - string
+          - 'null'
+        total:
+          type: integer
+          minimum: 0
+      required:
+      - items
+      additionalProperties: false
+
+    DeviceStatus:
+      type: object
+      properties:
+        device_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/Availability'
+        status_reason:
+          type: string
+        last_seen:
+          $ref: '#/components/schemas/Time'
+        last_checked:
+          $ref: '#/components/schemas/Time'
+        origin:
+          type: string
+          enum:
+          - local
+          - federated
+      required:
+      - device_id
+      - status
+      - origin
+      additionalProperties: false
+
+    DeviceTest:
+      type: object
+      properties:
+        device_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/Availability'
+        checks:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              ok:
+                type: boolean
+              message:
+                type: string
+            required:
+            - name
+            - ok
+            additionalProperties: false
+        checked_at:
+          $ref: '#/components/schemas/Time'
+      required:
+      - device_id
+      - status
+      - checks
+      - checked_at
+      description: Non-invasive metadata/status checks; never opens audio/video streams or runs GPU workloads.
+      additionalProperties: false
+
+    DiscoveryRequest:
+      type: object
+      properties:
+        plugin_ids:
+          type: array
+          items:
+            type: string
+        include_network:
+          type: boolean
+          default: false
+        dry_run:
+          type: boolean
+          default: false
+      description: Local scan only; network probing is opt-in.
+      additionalProperties: false
+
+    DiscoveryResult:
+      type: object
+      properties:
+        discovered:
+          type: array
+          items:
+            $ref: '#/components/schemas/Device'
+        created:
+          type: integer
+          minimum: 0
+        updated:
+          type: integer
+          minimum: 0
+        errors:
+          type: array
+          items:
+            $ref: './opal_kernel.yaml#/components/schemas/OpalErrorBody'
+      required:
+      - discovered
+      - created
+      - updated
+      - errors
+      additionalProperties: false
+
+    Default:
+      type: object
+      properties:
+        scope:
+          type: string
+          enum:
+          - global
+          - host
+          - device
+          - type
+        target:
+          type: string
+        values:
+          type: object
+          additionalProperties: {}
+      required:
+      - scope
+      - target
+      - values
+      additionalProperties: false
+
+    LabelSet:
+      type: object
+      properties:
+        value:
+          type: string
+      required:
+      - value
+      additionalProperties: false
+
+    TagSet:
+      type: object
+      properties:
+        tag:
+          type: string
+      required:
+      - tag
+      additionalProperties: false
+
+    GroupMode:
+      type: string
+      enum:
+      - static
+      - dynamic
+
+    DeviceFilter:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/DeviceType'
+        status:
+          $ref: '#/components/schemas/Availability'
+        host:
+          type: string
+        backend:
+          type: string
+        peer_id:
+          type: string
+          format: uuid
+        tags_all:
+          type: array
+          items:
+            type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+            description: Comparison expression e.g. audio.sample_rates contains 48000; compute.memory_mb >= 8192
+      description: Filter is declarative, read-only and is shared by device search and dynamic groups.
+      additionalProperties: false
+
+    Group:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        mode:
+          $ref: '#/components/schemas/GroupMode'
+        selector:
+          $ref: '#/components/schemas/DeviceFilter'
+        member_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        description:
+          type: string
+      required:
+      - id
+      - name
+      - mode
+      additionalProperties: false
+
+    GroupCreate:
+      type: object
+      properties:
+        name:
+          type: string
+        mode:
+          $ref: '#/components/schemas/GroupMode'
+        selector:
+          $ref: '#/components/schemas/DeviceFilter'
+        description:
+          type: string
+      required:
+      - name
+      - mode
+      description: selector required for dynamic groups, forbidden for static groups (semantic validation).
+      additionalProperties: false
+
+    GroupPatch:
+      type: object
+      properties:
+        description:
+          type: string
+        selector:
+          $ref: '#/components/schemas/DeviceFilter'
+      additionalProperties: false
+
+    GroupList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Group'
+      required:
+      - items
+      additionalProperties: false
+
+    Peer:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        base_url:
+          type: string
+          format: uri
+        trusted:
+          type: boolean
+        status:
+          $ref: '#/components/schemas/Availability'
+        last_synced:
+          $ref: '#/components/schemas/Time'
+        auto_discovered:
+          type: boolean
+        tls_verified:
+          type: boolean
+      required:
+      - id
+      - name
+      - base_url
+      - trusted
+      - status
+      - auto_discovered
+      additionalProperties: false
+
+    PeerCreate:
+      type: object
+      properties:
+        name:
+          type: string
+        base_url:
+          type: string
+          format: uri
+        credential_ref:
+          type: string
+          description: Reference to secret store; never a credential value
+        trusted:
+          type: boolean
+          default: false
+      required:
+      - name
+      - base_url
+      additionalProperties: false
+
+    PeerPatch:
+      type: object
+      properties:
+        name:
+          type: string
+        base_url:
+          type: string
+          format: uri
+        credential_ref:
+          type: string
+        trusted:
+          type: boolean
+      additionalProperties: false
+
+    PeerList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Peer'
+      required:
+      - items
+      additionalProperties: false
+
+    PeerSyncResult:
+      type: object
+      properties:
+        peer_id:
+          type: string
+          format: uuid
+        synced_at:
+          $ref: '#/components/schemas/Time'
+        added:
+          type: integer
+          minimum: 0
+        updated:
+          type: integer
+          minimum: 0
+        stale:
+          type: integer
+          minimum: 0
+        errors:
+          type: array
+          items:
+            $ref: './opal_kernel.yaml#/components/schemas/OpalErrorBody'
+      required:
+      - peer_id
+      - synced_at
+      - added
+      - updated
+      - stale
+      - errors
+      additionalProperties: false
+
+    PeerDiscoveryResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Peer'
+      required:
+      - items
+      description: Candidates are not trusted automatically and must be explicitly enrolled.
+      additionalProperties: false
+
+    SharingPolicy:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        effect:
+          type: string
+          enum:
+          - allow
+          - deny
+        peer_id:
+          type: string
+          format: uuid
+        device_id:
+          type: string
+          format: uuid
+        host:
+          type: string
+        type:
+          $ref: '#/components/schemas/DeviceType'
+        description:
+          type: string
+      required:
+      - id
+      - effect
+      description: Policies govern inventory metadata visibility only. Trusted peers see devices by default; deny
+        takes priority.
+      additionalProperties: false
+
+    SharingPolicyCreate:
+      type: object
+      properties:
+        effect:
+          type: string
+          enum:
+          - allow
+          - deny
+        peer_id:
+          type: string
+          format: uuid
+        device_id:
+          type: string
+          format: uuid
+        host:
+          type: string
+        type:
+          $ref: '#/components/schemas/DeviceType'
+        description:
+          type: string
+      required:
+      - effect
+      additionalProperties: false
+
+    SharingPolicyList:
+      type: object
+      properties:
+        default_visibility:
+          type: string
+          enum:
+          - allow_trusted
+          - deny_trusted
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SharingPolicy'
+      required:
+      - default_visibility
+      - items
+      additionalProperties: false
+
+    Plugin:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        enabled:
+          type: boolean
+        installed:
+          type: boolean
+        available:
+          type: boolean
+        supported_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeviceType'
+        capabilities:
+          type: array
+          items:
+            type: string
+        reason:
+          type: string
+      required:
+      - id
+      - name
+      - enabled
+      - installed
+      - available
+      - supported_types
+      additionalProperties: false
+
+    PluginList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Plugin'
+      required:
+      - items
+      additionalProperties: false
+
+    PluginTest:
+      type: object
+      properties:
+        plugin_id:
+          type: string
+        ok:
+          type: boolean
+        details:
+          type: object
+          additionalProperties: {}
+      required:
+      - plugin_id
+      - ok
+      additionalProperties: false
+
+    Event:
+      type: object
+      properties:
+        id:
+          type: string
+        event:
+          type: string
+        time:
+          $ref: '#/components/schemas/Time'
+        device_id:
+          type: string
+          format: uuid
+        peer_id:
+          type: string
+          format: uuid
+        data:
+          type: object
+          additionalProperties: {}
+      required:
+      - id
+      - event
+      - time
+      - data
+      additionalProperties: false
+
+    EventHistory:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Event'
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      additionalProperties: false
+
+    FederationInventory:
+      type: object
+      properties:
+        registry_id:
+          type: string
+          format: uuid
+        host:
+          type: string
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/Device'
+        snapshot_at:
+          $ref: '#/components/schemas/Time'
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - registry_id
+      - host
+      - devices
+      - snapshot_at
+      additionalProperties: false
+
+    Catalog:
+      type: object
+      properties:
+        device_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeviceType'
+        backends:
+          type: array
+          items:
+            type: string
+        event_types:
+          type: array
+          items:
+            type: string
+        capability_namespaces:
+          type: array
+          items:
+            type: string
+      required:
+      - device_types
+      - backends
+      - event_types
+      - capability_namespaces
+      additionalProperties: false
+
+    Accepted:
+      type: object
+      properties:
+        accepted:
+          type: boolean
+        message:
+          type: string
+      required:
+      - accepted
+      additionalProperties: false
+
+    FederationRegistry:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+          - ok
+          - degraded
+        version:
+          type: string
+        registry_id:
+          type: string
+          format: uuid
+      required:
+      - status
+      - version
+      - registry_id
+      description: Local registry identity and federation metadata as reported to trusted peers.
+      additionalProperties: false
+    DefaultList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Default'
+      required:
+      - items
+      additionalProperties: false
+    DeviceCapabilities:
+      type: object
+      additionalProperties: {}
+      description: Namespaced capability map for one device; keys are backend-defined and may evolve.
+    LabelMap:
+      type: object
+      additionalProperties:
+        type: string
+      description: Key-value labels on one device.
+    TagList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: string
+      required:
+      - items
+      additionalProperties: false
+
+  pathItems:
+    catalog:
+      x-opal-cli:
+        get:
+          command: catalog
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      get:
+        tags:
+        - catalog
+        summary: Discover device types, discovery backends and event names
+        operationId: opal_devices_catalog_get
+        description: "Static catalog of the registry vocabulary: device types, installed discovery backends, event names and capability namespaces."
+        responses:
+          '200':
+            description: Registry catalog.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Catalog'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+    device_collection:
+      x-opal-cli:
+        get:
+          command: list
+        post:
+          command: add
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      get:
+        tags:
+        - devices
+        summary: List and filter local and federated device inventory
+        operationId: opal_devices_device_list
+        description: List and filter local and federated device inventory
+        parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: './opal_kernel.yaml#/components/parameters/Limit'
+        - name: type
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/DeviceType'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/Availability'
+        - name: host
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: backend
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: peer_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: tag
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: label
+          in: query
+          required: false
+          schema:
+            type: string
+          description: key=value
+        - name: capability
+          in: query
+          required: false
+          schema:
+            type: string
+          description: key comparator value, e.g. compute.memory_mb>=8192
+        - name: min_memory_mb
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+        - name: group
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: include_stale
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+        responses:
+          '200':
+            description: Filtered device inventory.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/DeviceList'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+      post:
+        tags:
+        - devices
+        summary: Register user-managed device
+        operationId: opal_devices_device_add
+        description: Register user-managed device
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceCreate'
+        responses:
+          '201':
+            description: Registered device.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              Location:
+                $ref: './opal_kernel.yaml#/components/headers/Location'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Device'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+    device_item:
+      x-opal-cli:
+        get:
+          command: show
+        patch:
+          command: update
+        delete:
+          command: remove
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/DeviceId'
+      get:
+        tags:
+        - devices
+        summary: Show device metadata
+        operationId: opal_devices_device_get
+        description: Show device metadata
+        responses:
+          '200':
+            description: Device metadata.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Device'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+      patch:
+        tags:
+        - devices
+        summary: Update editable device metadata
+        operationId: opal_devices_device_update
+        description: Update editable device metadata
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DevicePatch'
+        responses:
+          '200':
+            description: Updated device.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Device'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+      delete:
+        tags:
+        - devices
+        summary: Remove registered device
+        operationId: opal_devices_device_remove
+        description: Remove registered device
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        responses:
+          '204':
+            description: Device removed.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+    device_capabilities:
+      x-opal-cli:
+        get:
+          command: capabilities
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/DeviceId'
+      get:
+        tags:
+        - devices
+        summary: Show device capabilities
+        operationId: opal_devices_device_capabilities
+        description: Namespaced capability map; keys are backend-defined and may evolve (decision 12.13).
+        responses:
+          '200':
+            description: Device capabilities.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/DeviceCapabilities'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+    device_status:
+      x-opal-cli:
+        get:
+          command: status
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/DeviceId'
+      get:
+        tags:
+        - devices
+        summary: Show device availability
+        operationId: opal_devices_device_status
+        description: Show device availability
+        responses:
+          '200':
+            description: Device availability.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/DeviceStatus'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '503':
+            $ref: './opal_kernel.yaml#/components/responses/ServiceUnavailable'
+    device_test:
+      x-opal-cli:
+        post:
+          command: test
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/DeviceId'
+      post:
+        tags:
+        - devices
+        summary: Perform safe non-invasive checks
+        operationId: opal_devices_device_test
+        description: Non-invasive metadata/status checks; never opens audio/video streams or runs GPU workloads (decision 12.3).
+        responses:
+          '200':
+            description: Device check results.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/DeviceTest'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '503':
+            $ref: './opal_kernel.yaml#/components/responses/ServiceUnavailable'
+    discovery_scan:
+      x-opal-cli:
+        post:
+          command: discover
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      post:
+        tags:
+        - discovery
+        summary: Discover local devices without operating them
+        operationId: opal_devices_discovery_scan
+        description: Local scan only; network probing is opt-in. Never captures or operates devices.
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveryRequest'
+        responses:
+          '200':
+            description: Discovery result.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/DiscoveryResult'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '503':
+            $ref: './opal_kernel.yaml#/components/responses/ServiceUnavailable'
+    default_collection:
+      x-opal-cli:
+        get:
+          group: default
+          command: list
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      get:
+        tags:
+        - defaults
+        summary: List preferred defaults
+        operationId: opal_devices_default_list
+        description: All preferred-device defaults across scopes; consumers resolve explicit > device > type > host > global.
+        responses:
+          '200':
+            description: Preferred defaults.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/DefaultList'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+    default_item:
+      x-opal-cli:
+        put:
+          group: default
+          command: set
+        delete:
+          group: default
+          command: remove
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/DefaultScope'
+      - $ref: '#/components/parameters/DefaultTarget'
+      put:
+        tags:
+        - defaults
+        summary: Set preferred defaults for device, type, host or global scope
+        operationId: opal_devices_default_set
+        description: Set preferred defaults for device, type, host or global scope
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Default'
+        responses:
+          '200':
+            description: Updated default.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Default'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+      delete:
+        tags:
+        - defaults
+        summary: Remove preferred defaults
+        operationId: opal_devices_default_remove
+        description: Remove preferred defaults
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        responses:
+          '204':
+            description: Default removed.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+    device_label_collection:
+      x-opal-cli:
+        get:
+          group: label
+          command: list
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/DeviceId'
+      get:
+        tags:
+        - labels
+        summary: List device labels
+        operationId: opal_devices_label_list
+        description: List device labels
+        responses:
+          '200':
+            description: Device labels.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/LabelMap'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+    device_label_item:
+      x-opal-cli:
+        put:
+          group: label
+          command: set
+        delete:
+          group: label
+          command: remove
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/LabelKey'
+      put:
+        tags:
+        - labels
+        summary: Set key-value device label
+        operationId: opal_devices_label_set
+        description: Set key-value device label
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LabelSet'
+        responses:
+          '200':
+            description: Updated device.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Device'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+      delete:
+        tags:
+        - labels
+        summary: Remove device label
+        operationId: opal_devices_label_remove
+        description: Remove device label
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        responses:
+          '204':
+            description: Label removed.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+    device_tag_collection:
+      x-opal-cli:
+        get:
+          group: tag
+          command: list
+        post:
+          group: tag
+          command: add
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/DeviceId'
+      get:
+        tags:
+        - tags
+        summary: List device tags
+        operationId: opal_devices_tag_list
+        description: List device tags
+        responses:
+          '200':
+            description: Device tags.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/TagList'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+      post:
+        tags:
+        - tags
+        summary: Add device tag
+        operationId: opal_devices_tag_add
+        description: Add device tag
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagSet'
+        responses:
+          '200':
+            description: Updated device.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Device'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+    device_tag_item:
+      x-opal-cli:
+        delete:
+          group: tag
+          command: remove
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/TagValue'
+      delete:
+        tags:
+        - tags
+        summary: Remove device tag
+        operationId: opal_devices_tag_remove
+        description: Remove device tag
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        responses:
+          '204':
+            description: Tag removed.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+    group_collection:
+      x-opal-cli:
+        get:
+          group: group
+          command: list
+        post:
+          group: group
+          command: add
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      get:
+        tags:
+        - groups
+        summary: List device groups
+        operationId: opal_devices_group_list
+        description: List device groups
+        responses:
+          '200':
+            description: Device groups.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/GroupList'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+      post:
+        tags:
+        - groups
+        summary: Create static or dynamic group
+        operationId: opal_devices_group_add
+        description: selector is required for dynamic groups and forbidden for static groups (semantic validation).
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupCreate'
+        responses:
+          '201':
+            description: Created group.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              Location:
+                $ref: './opal_kernel.yaml#/components/headers/Location'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Group'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+    group_item:
+      x-opal-cli:
+        get:
+          group: group
+          command: show
+        patch:
+          group: group
+          command: update
+        delete:
+          group: group
+          command: remove
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/GroupId'
+      get:
+        tags:
+        - groups
+        summary: Show group definition
+        operationId: opal_devices_group_get
+        description: Show group definition
+        responses:
+          '200':
+            description: Group definition.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Group'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+      patch:
+        tags:
+        - groups
+        summary: Update group definition
+        operationId: opal_devices_group_update
+        description: Update group definition
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupPatch'
+        responses:
+          '200':
+            description: Updated group.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Group'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+      delete:
+        tags:
+        - groups
+        summary: Remove group
+        operationId: opal_devices_group_remove
+        description: Remove group
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        responses:
+          '204':
+            description: Group removed.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+    group_member_collection:
+      x-opal-cli:
+        get:
+          parent: group
+          group: member
+          command: list
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/GroupId'
+      get:
+        tags:
+        - groups
+        summary: List group members
+        operationId: opal_devices_group_member_list
+        description: List group members
+        parameters:
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+        responses:
+          '200':
+            description: Group member devices.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/DeviceList'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+    group_member_item:
+      x-opal-cli:
+        put:
+          parent: group
+          group: member
+          command: add
+        delete:
+          parent: group
+          group: member
+          command: remove
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/GroupId'
+      - $ref: '#/components/parameters/DeviceId'
+      put:
+        tags:
+        - groups
+        summary: Add device to static group
+        operationId: opal_devices_group_member_add
+        description: Add device to static group
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        responses:
+          '200':
+            description: Updated group.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Group'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+      delete:
+        tags:
+        - groups
+        summary: Remove device from static group
+        operationId: opal_devices_group_member_remove
+        description: Remove device from static group
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        responses:
+          '204':
+            description: Member removed.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+    peer_collection:
+      x-opal-cli:
+        get:
+          group: peer
+          command: list
+        post:
+          group: peer
+          command: add
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      get:
+        tags:
+        - peers
+        summary: List federation peers
+        operationId: opal_devices_peer_list
+        description: List federation peers
+        responses:
+          '200':
+            description: Federation peers.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/PeerList'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+      post:
+        tags:
+        - peers
+        summary: Register an explicit peer
+        operationId: opal_devices_peer_add
+        description: Peers are never trusted implicitly; auto discovery is disabled by default (decision 12.5).
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PeerCreate'
+        responses:
+          '201':
+            description: Registered peer.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              Location:
+                $ref: './opal_kernel.yaml#/components/headers/Location'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Peer'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+    peer_item:
+      x-opal-cli:
+        get:
+          group: peer
+          command: show
+        patch:
+          group: peer
+          command: update
+        delete:
+          group: peer
+          command: remove
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/PeerId'
+      get:
+        tags:
+        - peers
+        summary: Show peer
+        operationId: opal_devices_peer_get
+        description: Show peer
+        responses:
+          '200':
+            description: Peer record.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Peer'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+      patch:
+        tags:
+        - peers
+        summary: Update peer metadata or trust
+        operationId: opal_devices_peer_update
+        description: Update peer metadata or trust
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PeerPatch'
+        responses:
+          '200':
+            description: Updated peer.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Peer'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+      delete:
+        tags:
+        - peers
+        summary: Remove peer
+        operationId: opal_devices_peer_remove
+        description: Remove peer
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        responses:
+          '204':
+            description: Peer removed.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+    peer_status:
+      x-opal-cli:
+        get:
+          group: peer
+          command: status
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/PeerId'
+      get:
+        tags:
+        - peers
+        summary: Check peer health and synchronization freshness
+        operationId: opal_devices_peer_status
+        description: Check peer health and synchronization freshness
+        responses:
+          '200':
+            description: Peer health and freshness.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Peer'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '503':
+            $ref: './opal_kernel.yaml#/components/responses/ServiceUnavailable'
+    peer_sync:
+      x-opal-cli:
+        post:
+          group: peer
+          command: sync
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/PeerId'
+      post:
+        tags:
+        - peers
+        summary: Refresh one peer cache now
+        operationId: opal_devices_peer_sync
+        description: Refresh one peer cache now
+        responses:
+          '200':
+            description: Peer synchronization result.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/PeerSyncResult'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '503':
+            $ref: './opal_kernel.yaml#/components/responses/ServiceUnavailable'
+    peers_sync:
+      x-opal-cli:
+        post:
+          group: peer
+          command: sync
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      post:
+        tags:
+        - peers
+        summary: Refresh all trusted peer caches now
+        operationId: opal_devices_peers_sync
+        description: Admission only; synchronization runs asynchronously.
+        responses:
+          '202':
+            description: Synchronization admitted.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Accepted'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '503':
+            $ref: './opal_kernel.yaml#/components/responses/ServiceUnavailable'
+    peers_discover:
+      x-opal-cli:
+        post:
+          group: peer
+          command: discover
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      post:
+        tags:
+        - peers
+        summary: Discover untrusted peer candidates using mDNS when enabled
+        operationId: opal_devices_peers_discover
+        description: Candidates are not trusted automatically and must be explicitly enrolled (decision 12.5).
+        responses:
+          '200':
+            description: Discovered peer candidates.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/PeerDiscoveryResult'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '503':
+            $ref: './opal_kernel.yaml#/components/responses/ServiceUnavailable'
+    sharing_policy_collection:
+      x-opal-cli:
+        get:
+          group: sharing
+          command: list
+        post:
+          group: sharing
+          command: add
+          aliases:
+            - allow
+            - deny
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      get:
+        tags:
+        - sharing
+        summary: List metadata visibility policies
+        operationId: opal_devices_sharing_policy_list
+        description: List metadata visibility policies
+        responses:
+          '200':
+            description: Sharing policies and default visibility.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/SharingPolicyList'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+      post:
+        tags:
+        - sharing
+        summary: Create allow or deny inventory visibility rule
+        operationId: opal_devices_sharing_policy_add
+        description: Deny policies take precedence over the allow_trusted default (decision 12.10).
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharingPolicyCreate'
+        responses:
+          '201':
+            description: Created sharing policy.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              Location:
+                $ref: './opal_kernel.yaml#/components/headers/Location'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/SharingPolicy'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+    sharing_policy_item:
+      x-opal-cli:
+        delete:
+          group: sharing
+          command: remove
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/PolicyId'
+      delete:
+        tags:
+        - sharing
+        summary: Remove sharing policy
+        operationId: opal_devices_sharing_policy_remove
+        description: Remove sharing policy
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        responses:
+          '204':
+            description: Sharing policy removed.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+    plugin_collection:
+      x-opal-cli:
+        get:
+          group: plugin
+          command: list
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      get:
+        tags:
+        - plugins
+        summary: List installed discovery plugins
+        operationId: opal_devices_plugin_list
+        description: List installed discovery plugins
+        responses:
+          '200':
+            description: Installed discovery plugins.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/PluginList'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+    plugin_item:
+      x-opal-cli:
+        get:
+          group: plugin
+          command: show
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/PluginId'
+      get:
+        tags:
+        - plugins
+        summary: Show plugin metadata
+        operationId: opal_devices_plugin_get
+        description: Show plugin metadata
+        responses:
+          '200':
+            description: Plugin metadata.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Plugin'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+    plugin_enable:
+      x-opal-cli:
+        post:
+          group: plugin
+          command: enable
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/PluginId'
+      post:
+        tags:
+        - plugins
+        summary: Enable an installed plugin.
+        operationId: opal_devices_plugin_enable
+        description: Enable an installed plugin.
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        responses:
+          '200':
+            description: Updated plugin.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Plugin'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+    plugin_disable:
+      x-opal-cli:
+        post:
+          group: plugin
+          command: disable
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/PluginId'
+      post:
+        tags:
+        - plugins
+        summary: Disable plugin.
+        operationId: opal_devices_plugin_disable
+        description: Disable plugin.
+        parameters:
+        - $ref: './opal_kernel.yaml#/components/parameters/IfMatch'
+        responses:
+          '200':
+            description: Updated plugin.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+              ETag:
+                $ref: './opal_kernel.yaml#/components/headers/ETag'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Plugin'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '409':
+            $ref: './opal_kernel.yaml#/components/responses/Conflict'
+          '412':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionFailed'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '428':
+            $ref: './opal_kernel.yaml#/components/responses/PreconditionRequired'
+    plugin_test:
+      x-opal-cli:
+        post:
+          group: plugin
+          command: test
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/PluginId'
+      post:
+        tags:
+        - plugins
+        summary: Test plugin requirements and discovery capability safely
+        operationId: opal_devices_plugin_test
+        description: Test plugin requirements and discovery capability safely
+        responses:
+          '200':
+            description: Plugin test result.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/PluginTest'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '503':
+            $ref: './opal_kernel.yaml#/components/responses/ServiceUnavailable'
+    plugin_discover:
+      x-opal-cli:
+        post:
+          group: plugin
+          command: discover
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      - $ref: '#/components/parameters/PluginId'
+      post:
+        tags:
+        - plugins
+        summary: Discover local devices through one plugin
+        operationId: opal_devices_plugin_discover
+        description: Discover local devices through one plugin
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveryRequest'
+        responses:
+          '200':
+            description: Discovery result.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/DiscoveryResult'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '404':
+            $ref: './opal_kernel.yaml#/components/responses/NotFound'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+          '503':
+            $ref: './opal_kernel.yaml#/components/responses/ServiceUnavailable'
+    event_collection:
+      x-opal-cli:
+        get:
+          group: event
+          command: list
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      get:
+        tags:
+        - events
+        summary: Browse recent device and peer event history
+        operationId: opal_devices_event_list
+        description: Browse recent device and peer event history
+        parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: './opal_kernel.yaml#/components/parameters/Limit'
+        - name: device_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: event
+          in: query
+          required: false
+          schema:
+            type: string
+        responses:
+          '200':
+            description: Recent event history.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/EventHistory'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+    event_stream:
+      x-opal-cli:
+        get:
+          command: watch
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      get:
+        tags:
+        - events
+        summary: Subscribe to native SSE device and peer events
+        operationId: opal_devices_event_stream
+        description: text/event-stream. Event data is a JSON Event object; stream contains id, event and data lines. No external opal-event service is required (decision 12.11).
+        parameters:
+        - name: device_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: event
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: Last-Event-ID
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Optional resume cursor; replay window expiry yields 410-style re-anchor guidance in the stream
+        responses:
+          '200':
+            description: Streaming SSE responses.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+            content:
+              text/event-stream:
+                schema:
+                  type: string
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+    federation_inventory:
+      x-opal-cli:
+        get:
+          group: federation
+          command: inventory
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      get:
+        tags:
+        - federation
+        summary: Read filtered inventory as a trusted peer
+        operationId: opal_devices_federation_inventory
+        description: Applies sharing policy (deny wins). Open metadata visibility is limited to authenticated trusted peers.
+        parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: './opal_kernel.yaml#/components/parameters/Limit'
+        responses:
+          '200':
+            description: Filtered federated inventory.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/FederationInventory'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'
+    federation_registry:
+      x-opal-cli:
+        get:
+          group: federation
+          command: registry
+      parameters:
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
+      - $ref: './opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+      get:
+        tags:
+        - federation
+        summary: Read local registry identity and federation metadata
+        operationId: opal_devices_federation_registry
+        description: Read local registry identity and federation metadata
+        responses:
+          '200':
+            description: Registry identity.
+            headers:
+              X-Opal-Session-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+              X-Opal-Transaction-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+              X-Opal-Request-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+              X-Opal-Causation-Id:
+                $ref: './opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/FederationRegistry'
+          '401':
+            $ref: './opal_kernel.yaml#/components/responses/Unauthorized'
+          '403':
+            $ref: './opal_kernel.yaml#/components/responses/Forbidden'
+          '422':
+            $ref: './opal_kernel.yaml#/components/responses/UnprocessableEntity'

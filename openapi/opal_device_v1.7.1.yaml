@@ -1,0 +1,341 @@
+openapi: 3.1.0
+info:
+  title: OPAL Devices API
+  version: 1.7.1
+  description: "Optional metadata-only registry for audio, video and compute devices. Local-first\
+    \ and optionally federated. No capture, playback, reservation, inference or device-control\
+    \ endpoints: consuming services operate devices themselves using the metadata this registry\
+    \ publishes. Human-managed YAML configuration; observed inventories and remote caches in\
+    \ SQLite. Peer inventory reads require authentication; registered peers see metadata by\
+    \ default unless a sharing policy denies it.\n\nThe devices domain surface is defined in\
+    \ the shared contract base `openapi/shared/opal_device_kernel.yaml` and mounted here under\
+    \ `/api/v1`; the standard kernel route families are mounted from `openapi/shared/opal_kernel.yaml`.\
+    \n\nOPAL SUITE STANDARD v1.2 (normative)\nX-Opal-Session-Id is an optional logical context\
+    \ identifier; it does not create a server-managed session or grant authorization. Entry-point\
+    \ services generate one when absent where a workflow requires it, and propagate it unchanged.\
+    \ A preexisting service-local session resource has a separate lifecycle. X-Opal-Transaction-Id\
+    \ is a single logical end-to-end operation and is not an atomic distributed transaction.\
+    \ X-Opal-Request-Id identifies one inbound HTTP exchange and is regenerated for each downstream\
+    \ HTTP hop (the incoming one can be used for diagnostics); X-Opal-Causation-Id names the\
+    \ immediate parent event/request, where applicable. For inbound requests, if a transaction\
+    \ ID is absent the service assigns one; all response types (including errors, streamed headers,\
+    \ and binary bodies) return session ID if known and transaction/request IDs. Never trust\
+    \ these values for access control. Propagate them into derived ZeroMQ envelope metadata.\
+    \ All identifiers are opaque 1..128-character printable ASCII tokens with no control/whitespace\
+    \ characters; client-supplied invalid values yield 422.\nStandard health routes: /api/v1/health/,\
+    \ /api/v1/health/live, /api/v1/health/ready. Setting: GET and PATCH /api/v1/setting/ for\
+    \ the whole map, plus GET, PUT and DELETE /api/v1/setting/{key} for individual keys retained\
+    \ for OPAL suite consistency; PATCH is atomic. Mutable configuration uses strong ETags and\
+    \ mandatory If-Match with 428 missing, 412 stale. For bounded configuration catalogs return\
+    \ full arrays (subject to explicit deployment caps); growing histories return bounded arrays\
+    \ in stable deterministic order and `limit` caps the returned items. Standard HTTP creation\
+    \ 201 Location, async admission 202, empty deletion 204. Streaming keeps media-specific\
+    \ transports but exposes correlation headers, defined failure behavior, and no unsupported\
+    \ replay guarantee. Configuration export/import/validation excludes secrets and history.\n\n\
+    Authentication and authorization follow the kernel `x-opal-authorization` extension: a\
+    \ single BearerAuth scheme covers the management API and the federation surface; trusted-peer\
+    \ status on `/api/v1/federation/*` reads is an authorization decision (403) driven by peer\
+    \ enrollment and sharing policy, not a separate scheme."
+tags:
+- name: devices
+  description: Device inventory and metadata.
+- name: discovery
+  description: Local backend discovery.
+- name: defaults
+  description: Preferred device defaults.
+- name: labels
+  description: Key-value device metadata.
+- name: tags
+  description: Simple device tags.
+- name: groups
+  description: Static and dynamic collections.
+- name: peers
+  description: Optional federated registry peers.
+- name: sharing
+  description: Visibility rules for trusted peers.
+- name: plugins
+  description: Discovery backend inspection and activation.
+- name: events
+  description: Native SSE changes and optional outbound publishing.
+- name: federation
+  description: Peer-facing authenticated inventory.
+- name: catalog
+  description: Device types, discovery backends and event names.
+- name: health
+  description: Service readiness and health information.
+- name: info
+  description: Service identity, version and liveness probes.
+- name: settings
+  description: Service-wide key/value setting.
+- name: backup
+  description: Backup, restore, import, export, and validate registry configuration.
+- name: profiles
+  description: Reusable named configuration presets; exactly one may be active at a time.
+- name: service
+  description: Service process lifecycle (start, stop, log tail).
+servers:
+- url: http://127.0.0.1:8080
+  description: Illustrative local endpoint; actual bind address and port are configurable.
+paths:
+  /api/v1/catalog:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/catalog'
+  /api/v1/device/:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/device_collection'
+  /api/v1/device/{device_id}:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/device_item'
+  /api/v1/device/{device_id}/capabilities:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/device_capabilities'
+  /api/v1/device/{device_id}/status:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/device_status'
+  /api/v1/device/{device_id}/test:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/device_test'
+  /api/v1/device/{device_id}/label:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/device_label_collection'
+  /api/v1/device/{device_id}/label/{key}:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/device_label_item'
+  /api/v1/device/{device_id}/tag:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/device_tag_collection'
+  /api/v1/device/{device_id}/tag/{tag}:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/device_tag_item'
+  /api/v1/discovery/scan:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/discovery_scan'
+  /api/v1/default/:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/default_collection'
+  /api/v1/default/{scope}/{target}:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/default_item'
+  /api/v1/group/:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/group_collection'
+  /api/v1/group/{group_id}:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/group_item'
+  /api/v1/group/{group_id}/member:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/group_member_collection'
+  /api/v1/group/{group_id}/member/{device_id}:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/group_member_item'
+  /api/v1/peer/:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/peer_collection'
+  /api/v1/peer/{peer_id}:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/peer_item'
+  /api/v1/peer/{peer_id}/status:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/peer_status'
+  /api/v1/peer/{peer_id}/sync:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/peer_sync'
+  /api/v1/peer/sync:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/peers_sync'
+  /api/v1/peer/discover:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/peers_discover'
+  /api/v1/sharing/policy/:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/sharing_policy_collection'
+  /api/v1/sharing/policy/{policy_id}:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/sharing_policy_item'
+  /api/v1/plugin/:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/plugin_collection'
+  /api/v1/plugin/{plugin_id}:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/plugin_item'
+  /api/v1/plugin/{plugin_id}/enable:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/plugin_enable'
+  /api/v1/plugin/{plugin_id}/disable:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/plugin_disable'
+  /api/v1/plugin/{plugin_id}/test:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/plugin_test'
+  /api/v1/plugin/{plugin_id}/discover:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/plugin_discover'
+  /api/v1/event/:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/event_collection'
+  /api/v1/event/stream:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/event_stream'
+  /api/v1/federation/inventory:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/federation_inventory'
+  /api/v1/federation/registry:
+    $ref: './shared/opal_device_kernel.yaml#/components/pathItems/federation_registry'
+  /api/v1/health/:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/health'
+    x-opal-cli:
+      get:
+        group: info
+        command: health
+  /api/v1/health/live:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/health_live'
+    x-opal-cli:
+      get:
+        group: info
+        command: live
+  /api/v1/health/ready:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/health_ready'
+    x-opal-cli:
+      get:
+        group: info
+        command: ready
+  /api/v1/info/:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/info'
+    x-opal-cli:
+      get:
+        group: info
+        command: version
+  /api/v1/info/ping:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/info_ping'
+    x-opal-cli:
+      get:
+        group: info
+        command: ping
+  /api/v1/setting/:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/settings_collection'
+    x-opal-cli:
+      get:
+        parent: config
+        group: setting
+        command: list
+      patch:
+        parent: config
+        group: setting
+        command: update
+  /api/v1/setting/{key}:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/settings_key'
+    x-opal-cli:
+      get:
+        parent: config
+        group: setting
+        command: show
+      put:
+        parent: config
+        group: setting
+        command: update
+      delete:
+        parent: config
+        group: setting
+        command: remove
+  /api/v1/backup/list:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/backup_list'
+    x-opal-cli:
+      get:
+        group: backup
+        command: list
+  /api/v1/backup/create:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/backup_create'
+    x-opal-cli:
+      post:
+        group: backup
+        command: create
+  /api/v1/backup/download/{filename}:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/backup_download'
+    x-opal-cli:
+      get:
+        group: backup
+        command: download
+  /api/v1/backup/restore/{filename}:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/backup_restore'
+    x-opal-cli:
+      post:
+        group: backup
+        command: restore
+  /api/v1/backup/{filename}:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/backup_delete'
+    x-opal-cli:
+      delete:
+        group: backup
+        command: remove
+  /api/v1/backup/export:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/backup_export'
+    x-opal-cli:
+      get:
+        group: backup
+        command: export
+  /api/v1/backup/import:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/backup_import'
+    x-opal-cli:
+      post:
+        group: backup
+        command: import
+  /api/v1/backup/validate:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/backup_validate'
+    x-opal-cli:
+      post:
+        group: backup
+        command: validate
+      get:
+        group: backup
+        command: validate
+  /api/v1/profile/:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/profiles_collection'
+    x-opal-cli:
+      get:
+        parent: config
+        group: profile
+        command: list
+      post:
+        parent: config
+        group: profile
+        command: add
+  /api/v1/profile/{profile_id}:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/profile_item'
+    x-opal-cli:
+      get:
+        parent: config
+        group: profile
+        command: show
+      patch:
+        parent: config
+        group: profile
+        command: update
+      delete:
+        parent: config
+        group: profile
+        command: remove
+  /api/v1/profile/{profile_id}/activate:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/profile_activate'
+    x-opal-cli:
+      post:
+        parent: config
+        group: profile
+        command: activate
+  /api/v1/service/start:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/service_start'
+    x-opal-cli:
+      post:
+        group: service
+        command: start
+  /api/v1/service/stop:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/service_stop'
+    x-opal-cli:
+      post:
+        group: service
+        command: stop
+  /api/v1/service/log:
+    $ref: './shared/opal_kernel.yaml#/components/pathItems/service_log'
+    x-opal-cli:
+      get:
+        group: service
+        command: log
+components:
+  securitySchemes:
+    BearerAuth:
+      $ref: './shared/opal_kernel.yaml#/components/securitySchemes/BearerAuth'
+x-opal-context-standard:
+  version: '1.2'
+  headers:
+  - X-Opal-Session-Id
+  - X-Opal-Transaction-Id
+  - X-Opal-Request-Id
+  - X-Opal-Causation-Id
+  session_mode: context-only
+  id_format: opaque-printable-ascii-1-to-128
+  transaction_atomicity: false
+  events:
+    $ref: './shared/opal_kernel.yaml#/x-opal-event-envelope'
+    metadata_schema_version: '1.0'
+  concurrency:
+    settings_and_config_mutations: strong-etag-if-match-required
+    missing_status: 428
+    stale_status: 412
+  pagination:
+    configuration: none
+    history: cursor
+    ordering: stable-deterministic
+    default_limit: 100
+    max_limit: 500
+  streaming: HTTP context headers precede bytes; /api/v1/event/stream is SSE carrying JSON
+    Event data with id, event and data lines; Last-Event-ID resumes within a bounded replay
+    window; no unlimited replay.
+security:
+- BearerAuth: []
+x-opal-authorization:
+  $ref: './shared/opal_kernel.yaml#/x-opal-authorization'
