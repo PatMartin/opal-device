@@ -74,6 +74,20 @@ class Store:
                 ")"
             )
             self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS peers ("
+                "  id TEXT PRIMARY KEY,"
+                "  name TEXT NOT NULL,"
+                "  base_url TEXT NOT NULL UNIQUE,"
+                "  doc TEXT NOT NULL"
+                ")"
+            )
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS sharing_policies ("
+                "  id TEXT PRIMARY KEY,"
+                "  doc TEXT NOT NULL"
+                ")"
+            )
+            self._conn.execute(
                 "CREATE TABLE IF NOT EXISTS events ("
                 "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
                 "  event TEXT NOT NULL,"

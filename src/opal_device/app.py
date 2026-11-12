@@ -22,6 +22,7 @@ from . import (
     discovery,
     events,
     groups,
+    peers,
     plugins,
     settings,
     system,
@@ -67,6 +68,7 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
     app.include_router(catalog.router)
     app.include_router(discovery.router)
     app.include_router(events.router)
+    app.include_router(peers.router)
 
     @app.exception_handler(ApiError)
     async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:

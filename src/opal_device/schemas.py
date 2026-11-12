@@ -60,3 +60,32 @@ class DiscoveryRequestModel(BaseModel):
     plugin_ids: list[str] | None = None
     include_network: bool = False
     dry_run: bool = False
+
+
+class PeerCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    base_url: str
+    credential_ref: str | None = None
+    trusted: bool = False
+
+
+class PeerPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    base_url: str | None = None
+    credential_ref: str | None = None
+    trusted: bool | None = None
+
+
+class SharingPolicyCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    effect: Literal["allow", "deny"]
+    peer_id: str | None = None
+    device_id: str | None = None
+    host: str | None = None
+    type: DeviceType | None = None
+    description: str | None = None
