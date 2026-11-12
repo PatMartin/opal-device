@@ -65,6 +65,14 @@ class Store:
                 "  doc TEXT NOT NULL"
                 ")"
             )
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS groups ("
+                "  id TEXT PRIMARY KEY,"
+                "  name TEXT NOT NULL,"
+                "  mode TEXT NOT NULL,"
+                "  doc TEXT NOT NULL"
+                ")"
+            )
 
     # -- helpers ----------------------------------------------------------
 
