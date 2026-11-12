@@ -1,8 +1,13 @@
-"""Step 17: federation endpoints + trusted-peer authorization."""
+"""Steps 17-18: federation endpoints, peer authz, sync, remote cache."""
 
 from __future__ import annotations
 
 import json
+import tempfile
+import time
+
+import httpx
+from fastapi.testclient import TestClient
 
 
 def _etag(client) -> str:
@@ -131,3 +136,168 @@ def test_inventory_excludes_remote_devices(client):
     )
     body = client.get("/api/v1/federation/inventory").json()
     assert body["devices"] == []
+
+
+# -- remote-cache sync ----------------------------------------------------------
+
+
+def _remote_app(tmp_path):
+    from opal_device.app import create_app
+
+    return create_app(tmp_path / "remote")
+
+
+def _wire_remote(client, remote_app):
+    client.app.state.http_client_factory = (
+        lambda peer: TestClient(remote_app)
+    )
+
+
+def _trusted_peer(client, base_url="http://remote"):
+    return client.post(
+        "/api/v1/peer/",
+        headers={"If-Match": _etag(client)},
+        json={
+            "name": "remote", "base_url": base_url, "trusted": True,
+        },
+    ).json()
+
+
+def test_sync_pulls_remote_inventory(client, tmp_path):
+    remote = _remote_app(tmp_path)
+    rc = TestClient(remote)
+    remote_etag = rc.get("/api/v1/setting/").headers["etag"]
+    rc.post(
+        "/api/v1/device/",
+        headers={"If-Match": remote_etag},
+        json={
+            "name": "mic", "host_id": "rh", "host_name": "rhost",
+            "type": "microphone", "backend": "alsa", "access": "local",
+        },
+    )
+    _wire_remote(client, remote)
+    peer = _trusted_peer(client)
+    resp = client.post(f"/api/v1/peer/{peer['id']}/sync")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["peer_id"] == peer["id"]
+    assert body["added"] == 1
+    assert body["updated"] == 0
+    assert body["stale"] == 0
+    assert body["errors"] == []
+    # remote device now cached, marked federated
+    items = client.get("/api/v1/device/").json()["items"]
+    assert len(items) == 1
+    assert items[0]["name"] == "mic"
+    assert client.get(
+        f"/api/v1/device/{items[0]['id']}/status"
+    ).json()["origin"] == "federated"
+    # peer freshness updated
+    p = client.get(f"/api/v1/peer/{peer['id']}").json()
+    assert p["status"] == "available"
+    assert p["last_synced"]
+
+
+def test_sync_stale_on_remote_removal(client, tmp_path):
+    remote = _remote_app(tmp_path)
+    rc = TestClient(remote)
+    etag = rc.get("/api/v1/setting/").headers["etag"]
+    dev = rc.post(
+        "/api/v1/device/",
+        headers={"If-Match": etag},
+        json={
+            "name": "mic", "host_id": "rh", "host_name": "rhost",
+            "type": "microphone", "backend": "alsa", "access": "local",
+        },
+    ).json()
+    _wire_remote(client, remote)
+    peer = _trusted_peer(client)
+    client.post(f"/api/v1/peer/{peer['id']}/sync")
+    # remove remotely, re-sync -> cached copy goes stale
+    rc.delete(
+        f"/api/v1/device/{dev['id']}",
+        headers={"If-Match": rc.get('/api/v1/setting/').headers['etag']},
+    )
+    body = client.post(f"/api/v1/peer/{peer['id']}/sync").json()
+    assert body["stale"] == 1
+    item = client.get("/api/v1/device/").json()["items"][0]
+    assert item["status"] == "stale"
+    assert client.get(
+        "/api/v1/device/?include_stale=false"
+    ).json()["items"] == []
+
+
+def test_sync_unreachable_peer_503(client):
+    client.app.state.http_client_factory = None
+    peer = _trusted_peer(client, base_url="http://127.0.0.1:9")
+    resp = client.post(f"/api/v1/peer/{peer['id']}/sync")
+    assert resp.status_code == 503
+    assert resp.json()["error"]["code"] == "peer_unreachable"
+    assert client.get(f"/api/v1/peer/{peer['id']}").json()["status"] == \
+        "unavailable"
+
+
+def test_peer_cred_sends_bearer_to_remote(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("OPAL_DEVICE_TOKEN", "remote-secret")
+    remote = _remote_app(tmp_path)
+    monkeypatch.delenv("OPAL_DEVICE_TOKEN")
+    monkeypatch.setenv("OPAL_DEVICE_CRED_PA", "remote-secret")
+    _wire_remote(client, remote)
+    peer = client.post(
+        "/api/v1/peer/",
+        headers={"If-Match": _etag(client)},
+        json={
+            "name": "remote", "base_url": "http://remote",
+            "trusted": True, "credential_ref": "PA",
+        },
+    ).json()
+    resp = client.post(f"/api/v1/peer/{peer['id']}/sync")
+    assert resp.status_code == 200
+
+
+def test_peers_sync_all_admission(client, tmp_path):
+    remote = _remote_app(tmp_path)
+    _wire_remote(client, remote)
+    _trusted_peer(client)
+    resp = client.post("/api/v1/peer/sync")
+    assert resp.status_code == 202
+    assert resp.json()["accepted"] is True
+    # worker finishes quickly on an empty remote
+    for _ in range(40):
+        if client.get("/api/v1/peer/").json()["items"][0].get(
+            "last_synced"
+        ):
+            break
+        time.sleep(0.05)
+
+
+def test_peers_discover_enabled_empty(client):
+    client.put(
+        "/api/v1/setting/federation.auto_discovery_enabled",
+        headers={"If-Match": _etag(client)},
+        json={"value": True},
+    )
+    resp = client.post("/api/v1/peer/discover")
+    assert resp.status_code == 200
+    assert resp.json() == {"items": []}
+
+
+def test_delete_peer_purges_remote_cache(client, tmp_path):
+    remote = _remote_app(tmp_path)
+    rc = TestClient(remote)
+    rc.post(
+        "/api/v1/device/",
+        headers={"If-Match": rc.get("/api/v1/setting/").headers["etag"]},
+        json={
+            "name": "mic", "host_id": "rh", "host_name": "rhost",
+            "type": "microphone", "backend": "alsa", "access": "local",
+        },
+    )
+    _wire_remote(client, remote)
+    peer = _trusted_peer(client)
+    client.post(f"/api/v1/peer/{peer['id']}/sync")
+    assert client.get("/api/v1/device/").json()["total"] == 1
+    client.delete(
+        f"/api/v1/peer/{peer['id']}", headers={"If-Match": _etag(client)}
+    )
+    assert client.get("/api/v1/device/").json()["total"] == 0

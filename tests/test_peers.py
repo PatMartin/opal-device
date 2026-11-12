@@ -99,10 +99,10 @@ def test_credential_ref_stored_never_echoed(client):
 
 
 def test_peers_sync_admission_route_exists(client):
-    # registered before /peer/{peer_id}; sync itself lands Step 18
+    # registered before /peer/{peer_id}; needs at least one trusted peer
     resp = client.post("/api/v1/peer/sync")
-    assert resp.status_code == 503
-    assert resp.json()["error"]["code"] == "peer_sync_unavailable"
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "no_trusted_peers"
 
 
 def test_peers_discover_disabled_503(client):
@@ -111,11 +111,12 @@ def test_peers_discover_disabled_503(client):
     assert resp.json()["error"]["code"] == "federation_discovery_disabled"
 
 
-def test_peer_sync_route_404_then_503(client):
+def test_peer_sync_route_404_then_422_untrusted(client):
     assert client.post("/api/v1/peer/nope/sync").status_code == 404
-    peer = _add(client).json()
+    peer = _add(client).json()  # untrusted by default
     resp = client.post(f"/api/v1/peer/{peer['id']}/sync")
-    assert resp.status_code == 503
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "peer_untrusted"
 
 
 def test_peer_events_emitted(client):
