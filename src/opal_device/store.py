@@ -66,6 +66,14 @@ class Store:
                 ")"
             )
             self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS defaults ("
+                "  scope TEXT NOT NULL,"
+                "  target TEXT NOT NULL,"
+                "  value_map TEXT NOT NULL,"
+                "  PRIMARY KEY (scope, target)"
+                ")"
+            )
+            self._conn.execute(
                 "CREATE TABLE IF NOT EXISTS groups ("
                 "  id TEXT PRIMARY KEY,"
                 "  name TEXT NOT NULL,"

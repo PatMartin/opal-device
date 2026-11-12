@@ -13,7 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 import os
 import time
 
-from . import __version__, constants, devices, groups, settings, system
+from . import __version__, constants, defaults, devices, groups, settings, system
 from .auth import BearerAuthMiddleware
 from .correlation import CorrelationMiddleware, ids_from_request
 from .errors import ApiError, error_body
@@ -50,6 +50,7 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
     app.include_router(settings.router)
     app.include_router(devices.router)
     app.include_router(groups.router)
+    app.include_router(defaults.router)
 
     @app.exception_handler(ApiError)
     async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
