@@ -44,6 +44,13 @@ class Store:
                 "INSERT OR IGNORE INTO meta (key, value) VALUES (?, '0')",
                 (_REVISION_KEY,),
             )
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS settings ("
+                "  key TEXT PRIMARY KEY,"
+                "  value TEXT NOT NULL,"
+                "  updated_at TEXT NOT NULL"
+                ")"
+            )
 
     # -- helpers ----------------------------------------------------------
 
