@@ -15,6 +15,7 @@ import time
 
 from . import (
     __version__,
+    catalog,
     constants,
     defaults,
     devices,
@@ -61,6 +62,7 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
     app.include_router(groups.router)
     app.include_router(defaults.router)
     app.include_router(plugins.router)
+    app.include_router(catalog.router)
 
     @app.exception_handler(ApiError)
     async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
