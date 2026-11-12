@@ -22,14 +22,24 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Body, Query, Request
+from fastapi.encoders import jsonable_encoder
+from pydantic import ValidationError
 from fastapi.responses import JSONResponse, Response
 
 from .dependencies import StoreDep
 from .errors import ApiError
 from .filters import match_device, parse_label_param
 from .precondition import check_if_match, require_if_match
-from .schemas import Access, Availability, DeviceCreate, DevicePatch, DeviceType
+from .schemas import (
+    Access,
+    Availability,
+    DeviceCreate,
+    DevicePatch,
+    DeviceType,
+    LabelSet,
+    TagSet,
+)
 from .store import Store
 
 router = APIRouter()
@@ -388,17 +398,50 @@ def device_get(rest: str, request: Request, store: StoreDep):
         return JSONResponse(content=doc.get("capabilities") or {})
     if sub == "status":
         return JSONResponse(content=_status_body(doc))
+    if sub == "label":
+        return JSONResponse(content=doc.get("labels") or {})
+    if sub == "tag":
+        return JSONResponse(content={"items": doc.get("tags") or []})
     raise _method_not_allowed(sub)
 
 
 @router.post("/api/v1/device/{rest:path}")
-def device_post(rest: str, request: Request, store: StoreDep):
+def device_post(
+    rest: str, request: Request, store: StoreDep, body: dict | None = None
+):
     doc, sub = _resolve(request, store)
     if doc is None:
         raise _not_found(request)
     if sub == "test":
         return JSONResponse(content=_device_test(store, doc))
+    if sub == "tag":
+        payload = _validate_body(TagSet, body)
+        return _tag_add(request, store, doc, payload.tag)
     raise _method_not_allowed(sub)
+
+
+def _validate_body(model, body: Any):
+    try:
+        return model.model_validate(body or {})
+    except ValidationError as err:
+        raise ApiError(
+            422,
+            "Request validation failed",
+            code="validation_error",
+            details=jsonable_encoder(err.errors()),
+        )
+
+
+def _tag_add(request: Request, store: Store, doc: dict, tag: str):
+    require_if_match(request)
+    with store.write_txn():
+        check_if_match(request, store)
+        if tag in (doc.get("tags") or []):
+            raise ApiError(409, f"Tag already present: {tag}", code="conflict")
+        doc.setdefault("tags", []).append(tag)
+        _update(store, doc)
+        store.bump_revision()
+        return JSONResponse(content=doc, headers={"ETag": store.etag()})
 
 
 @router.patch("/api/v1/device/{rest:path}")
@@ -425,16 +468,75 @@ def device_patch(rest: str, request: Request, store: StoreDep, body: DevicePatch
         return JSONResponse(content=doc, headers={"ETag": store.etag()})
 
 
+@router.put("/api/v1/device/{rest:path}")
+def device_put(
+    rest: str,
+    request: Request,
+    store: StoreDep,
+    body: dict | None = Body(default=None),
+):
+    doc, sub = _resolve(request, store)
+    if doc is None:
+        raise _not_found(request)
+    if sub is not None and sub.startswith("label/"):
+        key = unquote(sub.split("/", 1)[1])
+        payload = _validate_body(LabelSet, body)
+        return _label_set(request, store, doc, key, payload.value)
+    raise _method_not_allowed(sub)
+
+
+def _label_set(
+    request: Request, store: Store, doc: dict, key: str, value: str
+):
+    require_if_match(request)
+    with store.write_txn():
+        check_if_match(request, store)
+        doc.setdefault("labels", {})[key] = value
+        _update(store, doc)
+        store.bump_revision()
+        return JSONResponse(content=doc, headers={"ETag": store.etag()})
+
+
 @router.delete("/api/v1/device/{rest:path}")
 def device_delete(rest: str, request: Request, store: StoreDep):
     doc, sub = _resolve(request, store)
     if doc is None:
         raise _not_found(request)
+    if sub is not None and sub.startswith("label/"):
+        key = unquote(sub.split("/", 1)[1])
+        return _label_delete(request, store, doc, key)
+    if sub is not None and sub.startswith("tag/"):
+        tag = unquote(sub.split("/", 1)[1])
+        return _tag_delete(request, store, doc, tag)
     if sub is not None:
         raise _method_not_allowed(sub)
     require_if_match(request)
     with store.write_txn():
         check_if_match(request, store)
         _delete(store, doc["id"])
+        store.bump_revision()
+    return Response(status_code=204)
+
+
+def _label_delete(request: Request, store: Store, doc: dict, key: str):
+    require_if_match(request)
+    with store.write_txn():
+        check_if_match(request, store)
+        if key not in (doc.get("labels") or {}):
+            raise ApiError(404, f"Label not found: {key}")
+        del doc["labels"][key]
+        _update(store, doc)
+        store.bump_revision()
+    return Response(status_code=204)
+
+
+def _tag_delete(request: Request, store: Store, doc: dict, tag: str):
+    require_if_match(request)
+    with store.write_txn():
+        check_if_match(request, store)
+        if tag not in (doc.get("tags") or []):
+            raise ApiError(404, f"Tag not found: {tag}")
+        doc["tags"].remove(tag)
+        _update(store, doc)
         store.bump_revision()
     return Response(status_code=204)

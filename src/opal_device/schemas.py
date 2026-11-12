@@ -40,3 +40,15 @@ class DevicePatch(BaseModel):
     resource_uri: str | None = None
     configuration: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
+
+
+class LabelSet(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    value: str
+
+
+class TagSet(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tag: str
