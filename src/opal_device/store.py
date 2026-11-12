@@ -66,6 +66,12 @@ class Store:
                 ")"
             )
             self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS plugin_state ("
+                "  id TEXT PRIMARY KEY,"
+                "  enabled INTEGER NOT NULL"
+                ")"
+            )
+            self._conn.execute(
                 "CREATE TABLE IF NOT EXISTS defaults ("
                 "  scope TEXT NOT NULL,"
                 "  target TEXT NOT NULL,"
