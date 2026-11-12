@@ -10,9 +10,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+import os
 import time
 
-from . import __version__, system
+from . import __version__, constants, system
+from .auth import BearerAuthMiddleware
 from .correlation import CorrelationMiddleware, ids_from_request
 from .errors import ApiError, error_body
 from .store import Store, default_db_path
@@ -43,6 +45,7 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
     )
     app.state.store = Store(default_db_path(data_dir))
     app.state.started_at = time.monotonic()
+    app.state.auth_token = os.environ.get(constants.ENV_TOKEN) or None
     app.include_router(system.router)
 
     @app.exception_handler(ApiError)
@@ -72,7 +75,8 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
         )
         return _envelope_response(request, err)
 
-    # Correlation must be the outermost service middleware so that every
-    # response (including auth 401s added later) carries X-Opal-* headers.
+    # Middleware order: Correlation outermost so every response (incl.
+    # auth 401s) carries X-Opal-* headers; BearerAuth runs inside it.
+    app.add_middleware(BearerAuthMiddleware)
     app.add_middleware(CorrelationMiddleware)
     return app
