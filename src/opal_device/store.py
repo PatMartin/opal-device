@@ -51,6 +51,20 @@ class Store:
                 "  updated_at TEXT NOT NULL"
                 ")"
             )
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS devices ("
+                "  id TEXT PRIMARY KEY,"
+                "  qualified_name TEXT NOT NULL UNIQUE,"
+                "  name TEXT NOT NULL,"
+                "  host_id TEXT NOT NULL,"
+                "  host_name TEXT NOT NULL,"
+                "  type TEXT NOT NULL,"
+                "  backend TEXT NOT NULL,"
+                "  status TEXT NOT NULL,"
+                "  origin_peer_id TEXT,"
+                "  doc TEXT NOT NULL"
+                ")"
+            )
 
     # -- helpers ----------------------------------------------------------
 
