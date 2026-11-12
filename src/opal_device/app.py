@@ -15,6 +15,7 @@ import time
 
 from . import (
     __version__,
+    backup,
     catalog,
     constants,
     defaults,
@@ -75,6 +76,7 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
     app.include_router(sharing.router)
     app.include_router(federation.router)
     app.include_router(profiles.router)
+    app.include_router(backup.router)
 
     @app.exception_handler(ApiError)
     async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:

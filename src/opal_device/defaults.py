@@ -37,6 +37,26 @@ def _check_scope(scope: str) -> None:
         )
 
 
+def all_defaults(store) -> list[dict]:
+    rows = store.fetchall(
+        "SELECT scope, target, value_map AS v FROM defaults"
+        " ORDER BY scope, target"
+    )
+    return [
+        {"scope": r["scope"], "target": r["target"], "values": json.loads(r["v"])}
+        for r in rows
+    ]
+
+
+def upsert_default(store, entry: dict) -> None:
+    store.execute(
+        "INSERT INTO defaults (scope, target, value_map) VALUES (?, ?, ?) "
+        "ON CONFLICT(scope, target) DO UPDATE SET value_map = "
+        "excluded.value_map",
+        (entry["scope"], entry["target"], json.dumps(entry["values"])),
+    )
+
+
 @router.get("/api/v1/default/")
 def list_defaults(store: StoreDep):
     rows = store.fetchall(

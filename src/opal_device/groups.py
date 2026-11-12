@@ -96,6 +96,20 @@ def _update_group(store: Store, doc: dict) -> None:
     )
 
 
+def all_groups(store: Store) -> list[dict]:
+    rows = store.fetchall("SELECT doc FROM groups ORDER BY id")
+    return [json.loads(r["doc"]) for r in rows]
+
+
+def _save_group(store: Store, doc: dict) -> None:
+    store.execute(
+        "INSERT INTO groups (id, name, mode, doc) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(id) DO UPDATE SET name = excluded.name, "
+        "mode = excluded.mode, doc = excluded.doc",
+        (doc["id"], doc["name"], doc["mode"], json.dumps(doc)),
+    )
+
+
 def _get_or_404(store: Store, group_id: str) -> dict:
     grp = find_group(store, group_id)
     if grp is None:
