@@ -25,6 +25,7 @@ from . import (
     groups,
     peers,
     plugins,
+    profiles,
     settings,
     sharing,
     system,
@@ -73,6 +74,7 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
     app.include_router(peers.router)
     app.include_router(sharing.router)
     app.include_router(federation.router)
+    app.include_router(profiles.router)
 
     @app.exception_handler(ApiError)
     async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
