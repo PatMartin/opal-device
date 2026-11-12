@@ -10,7 +10,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import __version__, constants
+import time
+
+from . import __version__, system
 from .correlation import CorrelationMiddleware, ids_from_request
 from .errors import ApiError, error_body
 from .store import Store, default_db_path
@@ -40,6 +42,8 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
         openapi_url=None,
     )
     app.state.store = Store(default_db_path(data_dir))
+    app.state.started_at = time.monotonic()
+    app.include_router(system.router)
 
     @app.exception_handler(ApiError)
     async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
