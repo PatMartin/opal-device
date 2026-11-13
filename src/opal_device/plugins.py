@@ -76,7 +76,12 @@ class HostPlugin:
 
 
 def plugin_registry() -> dict[str, DiscoveryPlugin]:
-    registry: dict[str, DiscoveryPlugin] = {"host": HostPlugin()}
+    from .audio_plugin import AudioPlugin
+
+    registry: dict[str, DiscoveryPlugin] = {
+        "host": HostPlugin(),
+        "audio": AudioPlugin(),
+    }
     try:
         eps = entry_points(group=ENTRY_POINT_GROUP)
     except Exception:

@@ -23,3 +23,14 @@ def app(tmp_path):
 def client(app) -> TestClient:
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture(autouse=True)
+def _no_real_audio(monkeypatch):
+    # discovery scans would enumerate real host audio hardware
+    monkeypatch.setattr(
+        "opal_device.audio_plugin._query_devices", lambda: []
+    )
+    monkeypatch.setattr(
+        "opal_device.audio_plugin._query_hostapis", lambda: []
+    )
