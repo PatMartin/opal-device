@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -34,12 +35,14 @@ class Client:
         return r.headers["etag"]
 
     def req(self, method: str, path: str, *, mutate: bool = False,
-            **kw) -> Any:
+            soft: bool = False, **kw) -> Any:
         try:
             if mutate:
                 kw.setdefault("headers", {})["If-Match"] = self.etag()
             r = self.c.request(method, f"{API}{path}", **kw)
         except httpx.TransportError as exc:
+            if soft:
+                return None
             typer.echo(
                 f"cannot connect to {self.url} ({exc}); "
                 f"is the service running?", err=True,
@@ -603,24 +606,122 @@ service_app = typer.Typer(no_args_is_help=True)
 app.add_typer(service_app, name="service")
 
 
+# Lifecycle verbs are pidfile/logfile-based: they work against the API
+# when a server is reachable, and locally (same files, same semantics)
+# when it is not — so `service start` also bootstraps the first server.
+
+def _data_dir() -> Path:
+    from . import constants
+
+    return Path(
+        os.environ.get(constants.ENV_DATA_DIR, constants.DEFAULT_DATA_DIR)
+    )
+
+
+def _local_paths():
+    data_dir = _data_dir()
+    from .service import LOG_NAME, PID_NAME
+
+    return data_dir, data_dir / "logs" / LOG_NAME, data_dir / PID_NAME
+
+
+def _local_pid(pid_file: Path) -> int | None:
+    try:
+        return int(pid_file.read_text().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _local_start(append: bool) -> dict:
+    import subprocess
+    import sys
+
+    from .service import _alive, _terminate
+
+    data_dir, log_file, pid_file = _local_paths()
+    (data_dir / "logs").mkdir(parents=True, exist_ok=True)
+    previous_pid = None
+    pid = _local_pid(pid_file)
+    if pid is not None and _alive(pid):
+        previous_pid = pid
+        _terminate(pid)
+    env = dict(os.environ)
+    env["OPAL_DEVICE_DATA_DIR"] = str(data_dir)
+    if previous_pid is not None:
+        env["OPAL_DEVICE_WAIT_PID"] = str(previous_pid)
+    service_port = os.environ.get("OPAL_DEVICE_SERVICE_PORT")
+    if service_port:
+        env["OPAL_DEVICE_PORT"] = service_port
+    flags = {} if os.name == "nt" else {"start_new_session": True}
+    handle = open(log_file, "ab" if append else "wb")
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "opal_device"],
+        stdout=handle, stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL, env=env, **flags,
+    )
+    handle.close()
+    pid_file.write_text(str(proc.pid))
+    return {
+        "state": "running",
+        "pid": proc.pid,
+        "previous_pid": previous_pid,
+        "log_file": str(log_file),
+    }
+
+
+def _local_stop() -> dict:
+    from .service import _alive, _terminate
+
+    _, log_file, pid_file = _local_paths()
+    pid = _local_pid(pid_file)
+    if pid is not None and _alive(pid):
+        _terminate(pid)
+    try:
+        pid_file.unlink()
+    except OSError:
+        pass
+    return {
+        "state": "stopped",
+        "pid": None,
+        "previous_pid": None,
+        "log_file": str(log_file),
+    }
+
+
+def _local_log(lines: int) -> dict | None:
+    _, log_file, _ = _local_paths()
+    if not log_file.exists():
+        return None
+    tail = log_file.read_text(
+        encoding="utf-8", errors="replace"
+    ).splitlines()
+    return {"log_file": str(log_file), "lines": tail[-lines:]}
+
+
 @service_app.command("start")
 def service_start(ctx: typer.Context,
                   append: bool = typer.Option(False, "--append")):
-    _out(_client(ctx).req(
-        "POST", "/service/start", json={"append": append}
-    ).json())
+    r = _client(ctx).req(
+        "POST", "/service/start", json={"append": append}, soft=True
+    )
+    _out(r.json() if r is not None else _local_start(append))
 
 
 @service_app.command("stop")
 def service_stop(ctx: typer.Context):
-    _out(_client(ctx).req("POST", "/service/stop").json())
+    r = _client(ctx).req("POST", "/service/stop", soft=True)
+    _out(r.json() if r is not None else _local_stop())
 
 
 @service_app.command("log")
 def service_log(ctx: typer.Context, lines: int = typer.Option(10)):
-    body = _client(ctx).req(
-        "GET", "/service/log", params={"lines": lines}
-    ).json()
+    r = _client(ctx).req(
+        "GET", "/service/log", params={"lines": lines}, soft=True
+    )
+    body = r.json() if r is not None else _local_log(lines)
+    if body is None:
+        typer.echo("no log file found", err=True)
+        raise typer.Exit(1)
     for line in body["lines"]:
         typer.echo(line)
 

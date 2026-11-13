@@ -19,7 +19,7 @@ class _Shim:
     def etag(self):
         return self.tc.get("/api/v1/setting/").headers["etag"]
 
-    def req(self, method, path, *, mutate=False, **kw):
+    def req(self, method, path, *, mutate=False, soft=False, **kw):
         if mutate:
             kw.setdefault("headers", {})["If-Match"] = self.etag()
         r = self.tc.request(method, f"/api/v1{path}", **kw)
