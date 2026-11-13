@@ -114,6 +114,12 @@ def service_start(
     ]
     env = dict(os.environ)
     env["OPAL_DEVICE_DATA_DIR"] = str(_data_dir(store))
+    if previous_pid is not None:
+        # restart: child waits for the old process to release the port
+        env["OPAL_DEVICE_WAIT_PID"] = str(previous_pid)
+    service_port = os.environ.get("OPAL_DEVICE_SERVICE_PORT")
+    if service_port:
+        env["OPAL_DEVICE_PORT"] = service_port
     flags = {} if os.name == "nt" else {"start_new_session": True}
     mode = "ab" if append else "wb"
     log_handle = open(log_file, mode)

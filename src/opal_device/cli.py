@@ -17,13 +17,14 @@ import typer
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
-DEFAULT_URL = "http://127.0.0.1:8000"
+DEFAULT_URL = "http://127.0.0.1:8080"
 API = "/api/v1"
 
 
 class Client:
     def __init__(self, url: str, token: str | None):
-        self.c = httpx.Client(base_url=url.rstrip("/"), timeout=30.0)
+        self.url = url.rstrip("/")
+        self.c = httpx.Client(base_url=self.url, timeout=30.0)
         if token:
             self.c.headers["Authorization"] = f"Bearer {token}"
 
@@ -34,9 +35,16 @@ class Client:
 
     def req(self, method: str, path: str, *, mutate: bool = False,
             **kw) -> Any:
-        if mutate:
-            kw.setdefault("headers", {})["If-Match"] = self.etag()
-        r = self.c.request(method, f"{API}{path}", **kw)
+        try:
+            if mutate:
+                kw.setdefault("headers", {})["If-Match"] = self.etag()
+            r = self.c.request(method, f"{API}{path}", **kw)
+        except httpx.TransportError as exc:
+            typer.echo(
+                f"cannot connect to {self.url} ({exc}); "
+                f"is the service running?", err=True,
+            )
+            raise typer.Exit(1)
         if r.status_code >= 400:
             try:
                 body = r.json()
